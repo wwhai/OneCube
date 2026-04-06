@@ -7,22 +7,24 @@
 class LCDControl
 {
 public:
-    LCDControl(int address);
+    explicit LCDControl(uint8_t address);
+
     void init();
-    void displayMessage(const char *message);
-    void displayCpuAndMemoryInfo(float cpuUsage, float memoryUsage);
-    void displayTemperatureAndHumidity(float temp, float humidity);
-    void displayIpAddress(const char *ipAddress);
+
+    // Place text at an arbitrary cursor position (does NOT clear the line)
+    void displayText(uint8_t row, uint8_t col, const char *text);
+
+    // Overwrite an entire row with text, padding with spaces
+    void displayLine(uint8_t row, const char *text);
+
     void clearDisplay();
-    void displayNewMessage();
-    void displayTime();
+
+    // Standalone uptime display (shown when host is idle)
+    void displayUptime();
 
 private:
     LiquidCrystal_I2C lcd;
-    unsigned long startMillis; // Start time (in milliseconds since the program started)
-    void updateTimeDisplay();
-    char dateString[11]; // Buffer to hold formatted date string (YYYY-MM-DD)
-    char timeString[9];  // Buffer to hold formatted time string (HH:MM:SS)
+    unsigned long     startMillis;
 };
 
-#endif
+#endif // LCDCONTROL_H
