@@ -3,6 +3,7 @@
 #include "BeepControl.h"
 #include "LCDControl.h"
 #include "SerialProtocolParser.h"
+#include <stdio.h>
 
 // ─── Pin assignments ──────────────────────────────────────────────────────────
 static const int RED_PIN    = 2;
@@ -25,9 +26,19 @@ static bool          hostLcdActive = false;
 static unsigned long lastLcdCmdMs  = 0;
 static unsigned long lastUptimeMs  = 0;
 
+// ─── Device clock (set by host; device counts locally after calibration) ───
+static bool          deviceClockMode   = false;
+static uint32_t      clockBaseSeconds  = 0;
+static unsigned long clockBaseMillis   = 0;
+// Temporary LCD message (used to show errors / confirmations for a few seconds)
+static unsigned long lcdTempUntilMs = 0;
+static char lcdTempLine0[17] = "";
+static char lcdTempLine1[17] = "";
+
 // ─── Forward declarations ─────────────────────────────────────────────────────
 static void bootSequence();
 static void handleFrame(const ProtocolFrame &frame);
+static uint32_t getDeviceTimeSeconds();
 
 // ═════════════════════════════════════════════════════════════════════════════
 void setup()
@@ -54,12 +65,33 @@ void loop()
     if (hostLcdActive && (millis() - lastLcdCmdMs) >= HOST_LCD_TIMEOUT_MS)
         hostLcdActive = false;
 
-    // 4. Refresh uptime display every second (when host is not controlling LCD)
-    if (!hostLcdActive && (millis() - lastUptimeMs) >= 1000UL)
+    // 4. Refresh uptime/clock display every second (when host is not controlling LCD)
+    // If a temporary message is active, leave it on-screen until expiry.
+    if (lcdTempUntilMs > millis())
+    {
+        // keep temporary message displayed (do nothing)
+    }
+    else if (!hostLcdActive && (millis() - lastUptimeMs) >= 1000UL)
     {
         lastUptimeMs = millis();
-        lcdCtrl.displayUptime();
+        if (deviceClockMode)
+            lcdCtrl.displayClock(getDeviceTimeSeconds());
+        else
+            lcdCtrl.displayUptime();
     }
+}
+
+// Return the current device clock seconds.  If the host has calibrated
+// the clock (`deviceClockMode`), return the calibrated epoch seconds +
+// elapsed since calibration; otherwise fall back to uptime seconds.
+static uint32_t getDeviceTimeSeconds()
+{
+    if (deviceClockMode)
+    {
+        unsigned long delta = (millis() - clockBaseMillis) / 1000UL;
+        return (uint32_t)(clockBaseSeconds + delta);
+    }
+    return (uint32_t)(millis() / 1000UL);
 }
 
 // ─── Boot animation (blocking – runs once before loop) ────────────────────────
@@ -227,6 +259,45 @@ static void handleFrame(const ProtocolFrame &frame)
             (uint8_t)(up >>  8), (uint8_t)(up)
         };
         proto.sendAck(CMD_GET_TIME, STATUS_OK, d, 4);
+        break;
+    }
+
+    // ── SET TIME (host calibration) ──────────────────────────────────────────
+    // Payload: [t3,t2,t1,t0]  4-byte big-endian epoch seconds
+    // Payload: [0x00] (1-byte) → disable device clock mode
+    case CMD_SET_TIME:
+    {
+        if (len == 1 && p[0] == 0u)
+        {
+            deviceClockMode = false;
+            proto.sendAck(CMD_SET_TIME, STATUS_OK);
+            break;
+        }
+        if (len < 4)
+        {
+            proto.sendAck(CMD_SET_TIME, STATUS_INVALID);
+            // Show temporary error on LCD for a few seconds
+            snprintf(lcdTempLine0, sizeof(lcdTempLine0), "  OneCube v1.0  ");
+            snprintf(lcdTempLine1, sizeof(lcdTempLine1), "  Time Sync Err  ");
+            lcdCtrl.displayLine(0, lcdTempLine0);
+            lcdCtrl.displayLine(1, lcdTempLine1);
+            lcdTempUntilMs = millis() + 3000UL;
+            break;
+        }
+
+        uint32_t secs = ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) |
+                        ((uint32_t)p[2] << 8)  | ((uint32_t)p[3]);
+        clockBaseSeconds = secs;
+        clockBaseMillis  = millis();
+        deviceClockMode  = true;
+        proto.sendAck(CMD_SET_TIME, STATUS_OK);
+
+        // Briefly show confirmation
+        snprintf(lcdTempLine0, sizeof(lcdTempLine0), "  OneCube v1.0  ");
+        snprintf(lcdTempLine1, sizeof(lcdTempLine1), "   Time Set OK   ");
+        lcdCtrl.displayLine(0, lcdTempLine0);
+        lcdCtrl.displayLine(1, lcdTempLine1);
+        lcdTempUntilMs = millis() + 2000UL;
         break;
     }
 

@@ -18,6 +18,7 @@
 //  0x06   CMD_LCD_DISPLAY   [row, col, len, text…]                    [status]
 //  0x07   CMD_LCD_CLEAR     (none)                                    [status]
 //  0x08   CMD_GET_TIME      (none)                                    [status, uptime×4]
+//  0x0B   CMD_SET_TIME      [timeH,timeL,timeH2,timeL2]              Set device clock (epoch seconds BE)
 //  0x09   CMD_SET_BLINK     [mask, onH,onL, offH,offL, count]         [status]
 //                            count=0 → infinite
 //  0x0A   CMD_STOP_BLINK    [mask]                                    [status]
@@ -51,6 +52,7 @@ enum ProtocolCommand : uint8_t
     CMD_GET_TIME    = 0x08,
     CMD_SET_BLINK   = 0x09,
     CMD_STOP_BLINK  = 0x0A,
+    CMD_SET_TIME    = 0x0B,
     CMD_ERROR       = 0xFF
 };
 

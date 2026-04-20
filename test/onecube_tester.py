@@ -36,6 +36,7 @@ CMD_LCD_CLEAR   = 0x07
 CMD_GET_TIME    = 0x08
 CMD_SET_BLINK   = 0x09
 CMD_STOP_BLINK  = 0x0A
+CMD_SET_TIME    = 0x0B
 CMD_ERROR       = 0xFF
 
 STATUS_OK      = 0x00
@@ -183,6 +184,15 @@ class OneCubeClient:
         if not pl or pl[0] != STATUS_OK or len(pl) < 5:
             raise RuntimeError("GET_TIME failed")
         return struct.unpack(">I", pl[1:5])[0]
+
+    def set_time(self, epoch_seconds: int) -> bool:
+        payload = struct.pack(">I", int(epoch_seconds))
+        _, pl = self._send_recv(CMD_SET_TIME, payload)
+        return pl[0] == STATUS_OK if pl else False
+
+    def stop_time(self) -> bool:
+        _, pl = self._send_recv(CMD_SET_TIME, bytes([0x00]))
+        return pl[0] == STATUS_OK if pl else False
 
 
 # ─── MIDI-like melody (buzzer note sequence) ──────────────────────────────────
@@ -700,12 +710,27 @@ class App(tk.Tk):
         if self._clock_running:
             self._clock_running = False
             self._clock_btn.configure(text="▶  一键对时  启动时钟")
+            try:
+                self.client.stop_time()
+            except Exception:
+                pass
             self._log("[CLOCK] 时钟已停止", "info")
         else:
             self._clock_running = True
             self._clock_btn.configure(text="■  停止时钟")
             self._log("[CLOCK] 已启动 LCD 时钟同步", "ok")
-            self._run(self._clock_loop)
+            # One-shot: send current PC epoch to device as calibration.
+            def do_sync():
+                try:
+                    epoch = int(time.time())
+                    ok = self.client.set_time(epoch)
+                    if ok:
+                        self._log(f"[CLOCK] 对时成功 → {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(epoch))}", "ok")
+                    else:
+                        self._log("[CLOCK] 对时失败", "fail")
+                except Exception as exc:
+                    self._log(f"[CLOCK] ERROR: {exc}", "fail")
+            self._run(do_sync)
 
     def _clock_loop(self):
         # Clear LCD once to remove any old uptime/test content

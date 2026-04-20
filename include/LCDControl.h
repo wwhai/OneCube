@@ -1,6 +1,7 @@
 #ifndef LCDCONTROL_H
 #define LCDCONTROL_H
 
+#include <Arduino.h>
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 
@@ -21,6 +22,9 @@ public:
 
     // Standalone uptime display (shown when host is idle)
     void displayUptime();
+
+    // Display clock using epoch seconds (UTC)
+    void displayClock(uint32_t epochSeconds);
 
 private:
     LiquidCrystal_I2C lcd;
